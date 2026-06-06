@@ -344,7 +344,8 @@ def detect_trend(closes):
 
     else:
         return "SIDEWAYS"
-    @app.get("/trend/{symbol}")
+    
+@app.get("/trend/{symbol}")
 def trend(symbol: str):
 
     # TODO: replace with real candle API
