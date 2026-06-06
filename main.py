@@ -358,3 +358,189 @@ def trend(symbol: str):
         "trend": trend_result,
         "note": "Based on EMA20, EMA50 and momentum"
     }
+def extract_closes(history_data):
+
+    if not history_data or "data" not in history_data:
+        return []
+
+    closes = []
+
+    for c in history_data["data"]:
+        try:
+            closes.append(float(c["close"]))
+        except:
+            continue
+
+    return closes
+def ema(data, period):
+    data = np.array(data)
+
+    if len(data) < period:
+        return np.mean(data)
+
+    k = 2 / (period + 1)
+
+    ema_val = data[0]
+
+    for price in data[1:]:
+        ema_val = price * k + ema_val * (1 - k)
+
+    return ema_val
+def detect_real_trend(closes):
+
+    if len(closes) < 20:
+        return "INSUFFICIENT_DATA"
+
+    ema20 = ema(closes[-20:], 20)
+    ema50 = ema(closes[-50:] if len(closes) >= 50 else closes, 10)
+
+    last = closes[-1]
+    prev = closes[-5] if len(closes) >= 5 else closes[0]
+
+    momentum = ((last - prev) / prev) * 100
+
+    # TREND LOGIC
+    if ema20 > ema50 and momentum > 0.3:
+        return "BULLISH"
+
+    elif ema20 < ema50 and momentum < -0.3:
+        return "BEARISH"
+
+    else:
+        return "SIDEWAYS"
+    @app.get("/trend/{symbol}")
+def trend(symbol: str):
+
+    # 1. CALL YOUR OWN HISTORY LOGIC (same NepseAlpha source)
+    from fastapi import Request
+
+    # reuse internal function
+    history_data = history(symbol)
+
+    # 2. extract closes
+    closes = extract_closes(history_data)
+
+    if not closes:
+        return {
+            "symbol": symbol,
+            "trend": "NO_DATA"
+        }
+
+    # 3. detect trend
+    trend_result = detect_real_trend(closes)
+
+    return {
+        "symbol": symbol,
+        "trend": trend_result,
+        "last_price": closes[-1],
+        "candles": len(closes)
+    }
+def extract_closes(history_data):
+
+    if not history_data or "data" not in history_data:
+        return []
+
+    return [float(c["close"]) for c in history_data["data"] if "close" in c]
+def ema(data, period):
+    if len(data) < 2:
+        return data[-1]
+
+    k = 2 / (period + 1)
+    ema_val = data[0]
+
+    for price in data[1:]:
+        ema_val = price * k + ema_val * (1 - k)
+
+    return ema_val
+def trend_1d(closes):
+
+    if len(closes) < 20:
+        return "NEUTRAL"
+
+    ema20 = ema(closes[-20:], 20)
+    ema50 = ema(closes[-50:] if len(closes) >= 50 else closes, 10)
+
+    momentum = (closes[-1] - closes[-5]) / closes[-5]
+
+    if ema20 > ema50 and momentum > 0:
+        return "BULLISH"
+
+    if ema20 < ema50 and momentum < 0:
+        return "BEARISH"
+
+    return "SIDEWAYS"
+def trend_1h(closes):
+
+    if len(closes) < 10:
+        return "NEUTRAL"
+
+    short = closes[-5:]
+    long = closes[-10:]
+
+    if sum(short) > sum(long):
+        return "BULLISH"
+
+    if sum(short) < sum(long):
+        return "BEARISH"
+
+    return "SIDEWAYS"
+def trend_15m(closes):
+
+    if len(closes) < 5:
+        return "NEUTRAL"
+
+    if closes[-1] > closes[-2]:
+        return "BULLISH"
+
+    if closes[-1] < closes[-2]:
+        return "BEARISH"
+
+    return "SIDEWAYS"
+def final_trend(t1d, t1h, t15m):
+
+    score = 0
+
+    def val(t):
+        if t == "BULLISH":
+            return 1
+        if t == "BEARISH":
+            return -1
+        return 0
+
+    score += val(t1d) * 0.5
+    score += val(t1h) * 0.3
+    score += val(t15m) * 0.2
+
+    if score > 0.3:
+        return "BULLISH"
+
+    if score < -0.3:
+        return "BEARISH"
+
+    return "SIDEWAYS"
+@app.get("/multi-trend/{symbol}")
+def multi_trend(symbol: str):
+
+    history_data = history(symbol)
+    closes = extract_closes(history_data)
+
+    if not closes:
+        return {
+            "symbol": symbol,
+            "trend": "NO_DATA"
+        }
+
+    t1d = trend_1d(closes)
+    t1h = trend_1h(closes)
+    t15m = trend_15m(closes)
+
+    final = final_trend(t1d, t1h, t15m)
+
+    return {
+        "symbol": symbol,
+        "trend_1d": t1d,
+        "trend_1h": t1h,
+        "trend_15m": t15m,
+        "final_trend": final,
+        "last_price": closes[-1]
+    }
